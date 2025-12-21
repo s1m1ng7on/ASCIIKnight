@@ -1,0 +1,7 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="ASCIIKnight/ASCIIKnight.vcxproj" Id="49928dcf-d276-467b-921b-e4f3148d11be" />
+</Solution>
