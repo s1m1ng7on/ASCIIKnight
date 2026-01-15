@@ -9,10 +9,15 @@ using namespace std;
 const int WIDTH = 90, HEIGHT = 25;
 const int INITIAL_HITPOINTS = 5;
 const char PLATFORM = '=', BORDER = '#', EMPTY = ' ', PLAYER = '@';
+const int JUMP_STRENGTH = 2;
+const int GRAVITY = 1;
 
 int hitpoints = INITIAL_HITPOINTS;
 int playerX = (WIDTH / 2) - 1;
 int playerY = (HEIGHT / 2) - 1;
+
+int jumpsLeft = 2;
+int velY = 0;
 
 char** gameMatrix = nullptr;
 
@@ -39,7 +44,6 @@ void initializeGameMatrix(int width, int height) {
 
 HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
 
-// просто помощна функция за местене на курсора
 void moveCursor(int x, int y) {
     COORD c;
     c.X = (SHORT)x;
@@ -87,7 +91,10 @@ void moveHorizontal(int dx) {
 }
 
 void jump() {
-    // TODO
+    if (jumpsLeft <= 0) return;
+
+    velY = -JUMP_STRENGTH;
+    jumpsLeft--;
 }
 
 void handleInput() {
@@ -125,8 +132,34 @@ void render() {
 }
 
 void gravityCheck() {
-    if (gameMatrix[playerY + 1][playerX] == EMPTY)
-        playerY++;
+    bool onGround = isBlocked(playerX, playerY + 1);
+
+    if (onGround && velY >= 0) {
+        velY = 0;
+        jumpsLeft = 2;
+    }
+    else {
+        velY += GRAVITY;
+    }
+
+    int steps = abs(velY);
+    int dir = (velY < 0) ? -1 : 1;
+
+    for (int s = 0; s < steps; s++) {
+        int newY = playerY + dir;
+
+        if (newY < 1 || newY > HEIGHT - 2) {
+            velY = 0;
+            break;
+        }
+
+        if (gameMatrix[newY][playerX] == BORDER || gameMatrix[newY][playerX] == PLATFORM) {
+            velY = 0;
+            break;
+        }
+
+        playerY = newY;
+    }
 }
 
 int main()
