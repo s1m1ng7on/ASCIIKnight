@@ -1,22 +1,20 @@
-#include <iostream>
+﻿#include <iostream>
 #include <conio.h>
+#include <cstdlib>
+#include <ctime>
+#include <windows.h>
 
 using namespace std;
 
-const int WIDTH = 120, HEIGHT = 30;
+const int WIDTH = 90, HEIGHT = 25;
 const int INITIAL_HITPOINTS = 5;
-const char PLATFORM = '=', BORDER = '#', EMPTY = ' ';
+const char PLATFORM = '=', BORDER = '#', EMPTY = ' ', PLAYER = '@';
+
+int hitpoints = INITIAL_HITPOINTS;
+int playerX = (WIDTH / 2) - 1;
+int playerY = (HEIGHT / 2) - 1;
 
 char** gameMatrix = nullptr;
-
-int changePlayerPosition(int x, int y) {
-    if (gameMatrix[x][y] == PLATFORM || gameMatrix[x][y] == BORDER)
-        return 1;
-
-
-
-    return 0;
-}
 
 void initializeGameMatrix(int width, int height) {
     gameMatrix = new char* [height];
@@ -39,37 +37,110 @@ void initializeGameMatrix(int width, int height) {
     }
 }
 
-void visualizeArena(int width, int height) {
-    for (int i = 0; i < height; i++) {
-        for (int j = 0; j < width; j++) {
-            cout << gameMatrix[i][j];
+HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+
+// просто помощна функция за местене на курсора
+void moveCursor(int x, int y) {
+    COORD c;
+    c.X = (SHORT)x;
+    c.Y = (SHORT)y;
+    SetConsoleCursorPosition(hConsole, c);
+}
+
+void hideCursor() {
+    CONSOLE_CURSOR_INFO info;
+    GetConsoleCursorInfo(hConsole, &info);
+    info.bVisible = FALSE;
+    SetConsoleCursorInfo(hConsole, &info);
+}
+
+int randInt(int a, int b) {
+    return a + rand() % (b - a + 1);
+}
+
+void generatePlatforms() {
+    for (int i = 0; i < 3; i++) {
+        int randX = randInt(1, WIDTH - 2);
+        int randY = randInt(1, HEIGHT - 2);
+        int length = randInt(1, WIDTH - 3);
+        
+        int j = 0;
+        while (j < length && gameMatrix[randY][j + randX] != BORDER && gameMatrix[randY][j + randX] != PLATFORM) {
+            gameMatrix[randY][j + randX] = PLATFORM;
+            j++;
+        }
+    }
+}
+
+bool isBlocked(int posX, int posY) {
+    return gameMatrix[posY][posX] == BORDER || gameMatrix[posY][posX] == PLATFORM;
+}
+
+void moveHorizontal(int dx) {
+    int newX = playerX + dx;
+
+    if (newX < 1 || newX > WIDTH - 2)
+        return;
+
+    if (!isBlocked(newX, playerY))
+        playerX = newX;
+}
+
+void jump() {
+    // TODO
+}
+
+void handleInput() {
+    if (_kbhit() == true) {
+        switch (_getch()) {
+            case 'A':
+            case 'a':
+                moveHorizontal(-1);
+                break;
+            case 'D':
+            case 'd':
+                moveHorizontal(1);
+                break;
+            case 'W':
+            case 'w':
+                jump();
+                break;
+        }
+    }
+}
+
+void render() {
+    moveCursor(0, 0);
+
+    cout << "HP: " << hitpoints << endl;
+
+    for (int i = 0; i < HEIGHT; i++) {
+        for (int j = 0; j < WIDTH; j++) {
+            cout << (!(i == playerY && j == playerX)
+                ? gameMatrix[i][j]
+                : PLAYER);
         }
         cout << endl;
     }
 }
 
+void gravityCheck() {
+    if (gameMatrix[playerY + 1][playerX] == EMPTY)
+        playerY++;
+}
+
 int main()
 {
-    int hitpoints = INITIAL_HITPOINTS;
-    int posX, posY;
-    cout << "HP: " << hitpoints << endl;
+    srand((unsigned)time(nullptr));
 
     initializeGameMatrix(WIDTH, HEIGHT);
-    visualizeArena(WIDTH, HEIGHT);
+    generatePlatforms();
 
-    /*while (true) {
-        if (_kbhit() == true) {
-            switch (_getch()) {
-                case 'A':
-                    changePlayerPosition(posX--, posY);
-                    break;
-                case 'D':
-                    changePlayerPosition(posX++, posY);
-                    break;
-                case 'W':
-                    changePlayerPosition(posX, posY--);
-                    break;
-            }
-        }
-    }*/
+    while (true) {
+        handleInput();
+        gravityCheck();
+        render();
+
+        Sleep(40);
+    }
 }
