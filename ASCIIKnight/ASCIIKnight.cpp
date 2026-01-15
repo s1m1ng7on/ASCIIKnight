@@ -8,7 +8,19 @@ using namespace std;
 
 const int WIDTH = 90, HEIGHT = 25;
 const int INITIAL_HITPOINTS = 5;
-const char PLATFORM = '=', BORDER = '#', EMPTY = ' ', PLAYER = '@';
+const int WAVES_NUMBER = 5;
+
+const char PLAYER = '@',
+           BASIC_WALKER = 'E',
+           JUMPER = 'J',
+           FLIER = 'F',
+           CRAWLER = 'C',
+           BOSS = 'B';
+
+const char EMPTY = ' ',
+           PLATFORM = '=',
+           BORDER = '#';
+
 const int JUMP_STRENGTH = 2;
 const int GRAVITY = 1;
 
@@ -17,7 +29,7 @@ int playerX = (WIDTH / 2) - 1;
 int playerY = (HEIGHT / 2) - 1;
 
 int jumpsLeft = 2;
-int velY = 0;
+int velX = 0, velY = 0;
 
 char** gameMatrix = nullptr;
 
@@ -119,7 +131,21 @@ void handleInput() {
 void render() {
     moveCursor(0, 0);
 
-    cout << "HP: " << hitpoints << endl;
+    cout << "HP: ";
+    
+    for (int i = 1; i <= INITIAL_HITPOINTS; i++) {
+        if (i <= hitpoints)
+            cout << '0';
+        else
+            cout << 'o';
+
+        if (i < INITIAL_HITPOINTS)
+            cout << '-';
+    }
+
+    cout << '\t'
+         << "- (a / d move, w jump, double jump, i / j / k / l attack)"
+         << endl;
 
     for (int i = 0; i < HEIGHT; i++) {
         for (int j = 0; j < WIDTH; j++) {
@@ -138,28 +164,21 @@ void gravityCheck() {
         velY = 0;
         jumpsLeft = 2;
     }
-    else {
-        velY += GRAVITY;
-    }
 
     int steps = abs(velY);
     int dir = (velY < 0) ? -1 : 1;
 
-    for (int s = 0; s < steps; s++) {
+    for (int i = 0; i < steps; i++) {
         int newY = playerY + dir;
 
-        if (newY < 1 || newY > HEIGHT - 2) {
-            velY = 0;
-            break;
-        }
-
-        if (gameMatrix[newY][playerX] == BORDER || gameMatrix[newY][playerX] == PLATFORM) {
-            velY = 0;
-            break;
-        }
+        if (newY < 1 || newY > HEIGHT - 2) { velY = 0; break; }
+        if (isBlocked(playerX, newY)) { velY = 0; break; }
 
         playerY = newY;
     }
+
+    onGround = isBlocked(playerX, playerY + 1);
+    if (!onGround) velY += GRAVITY;
 }
 
 int main()
@@ -174,8 +193,48 @@ int main()
     while (true) {
         handleInput();
         gravityCheck();
+
+        startWave(1);
+
         render();
 
         Sleep(40);
+    }
+}
+
+struct Enemy {
+    int x, y;
+    char type;
+    int hp;
+    bool alive;
+};
+
+Enemy* enemies = nullptr;
+
+int enemiesCount = 0;
+
+char randEnemyType() {
+    int randEnemyCode = randInt(1, 4);
+
+    switch (randEnemyCode) {
+        case 1: return BASIC_WALKER;
+        case 2: return JUMPER;
+        case 3: return FLIER;
+        case 4: return CRAWLER;
+        default: return BASIC_WALKER;
+    }
+}
+
+void startWave(int wave) {
+    delete[] enemies;
+
+    enemiesCount += randInt(2, 4);
+    enemies = new Enemy[enemiesCount];
+
+    for (int i = 0; i < enemiesCount; i++) {
+        enemies[i].x = randInt(1, WIDTH - 2);
+        enemies[i].y = randInt(1, HEIGHT - 3);
+        enemies[i].type = randEnemyType();
+        enemies[i].alive = true;
     }
 }
