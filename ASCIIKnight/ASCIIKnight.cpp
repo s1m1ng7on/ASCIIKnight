@@ -133,6 +133,8 @@ int main()
 {
     srand((unsigned)time(nullptr));
 
+    hideCursor();
+
     initializeGameMatrix(WIDTH, HEIGHT);
     generatePlatforms();
 
