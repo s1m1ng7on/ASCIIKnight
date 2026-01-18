@@ -6,6 +6,20 @@
 
 using namespace std;
 
+struct Enemy {
+    int x, y;
+    char type;
+    int hp;
+    bool alive;
+};
+
+enum Direction {
+    Up,
+    Left,
+    Down,
+    Right
+};
+
 const int WIDTH = 90, HEIGHT = 25;
 const int INITIAL_HITPOINTS = 5;
 const int WAVES_NUMBER = 5;
@@ -23,6 +37,27 @@ const char EMPTY = ' ',
 
 const int JUMP_STRENGTH = 2;
 const int GRAVITY = 1;
+const int ATTACK_CELLS = 3;
+
+const int PLATFORMS_MIN = 3, PLATFORMS_MAX = 8;
+
+const int COL_DEFAULT = 7,
+          COL_BORDER = 8,
+          COL_PLATFORM = 6,
+          COL_PLAYER = 11,
+          COL_ENEMY = 12,
+          COL_BOSS = 13,
+          COL_ATTACK = 10,
+          COL_HP_FULL = 10,
+          COL_HP_EMPTY = 8;
+
+const char attackAnimations[4][ATTACK_CELLS] = {
+    {'/', '-', '\\'},
+    {'/', '|', '\\'},
+    {'\\', '-', '/'},
+    {'\\', '|', '/'}
+};
+char oldCellSymbol[ATTACK_CELLS];
 
 int hitpoints = INITIAL_HITPOINTS;
 int playerX = (WIDTH / 2) - 1;
@@ -31,7 +66,13 @@ int playerY = (HEIGHT / 2) - 1;
 int jumpsLeft = 2;
 int velX = 0, velY = 0;
 
+Enemy* enemies = nullptr;
+int currentWave = 0;
+int enemiesCount = 0;
+
 char** gameMatrix = nullptr;
+
+HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
 
 void initializeGameMatrix(int width, int height) {
     gameMatrix = new char* [height];
@@ -54,13 +95,97 @@ void initializeGameMatrix(int width, int height) {
     }
 }
 
-HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
-
 void moveCursor(int x, int y) {
     COORD c;
     c.X = (SHORT)x;
     c.Y = (SHORT)y;
     SetConsoleCursorPosition(hConsole, c);
+}
+
+void render() {
+    moveCursor(0, 0);
+
+    cout << "HP: ";
+    for (int i = 1; i <= INITIAL_HITPOINTS; i++) {
+        if (i <= hitpoints) SetConsoleTextAttribute(hConsole, COL_HP_FULL);
+        else SetConsoleTextAttribute(hConsole, COL_HP_EMPTY);
+
+        cout << (i <= hitpoints ? '0' : 'o');
+
+        SetConsoleTextAttribute(hConsole, COL_DEFAULT);
+        if (i < INITIAL_HITPOINTS) cout << '-';
+    }
+
+    SetConsoleTextAttribute(hConsole, COL_DEFAULT);
+    cout << '\t'
+        << "- (a / d move, w jump, double jump, i / j / k / l attack)"
+        << endl;
+
+    for (int i = 0; i < enemiesCount; i++) {
+        if (enemies[i].alive)
+            gameMatrix[enemies[i].y][enemies[i].x] = enemies[i].type;
+        else
+            gameMatrix[enemies[i].y][enemies[i].x] = EMPTY;
+    }
+
+    int currentColor = COL_DEFAULT;
+    SetConsoleTextAttribute(hConsole, currentColor);
+
+    for (int i = 0; i < HEIGHT; i++) {
+        for (int j = 0; j < WIDTH; j++) {
+
+            char ch = gameMatrix[i][j];
+
+            if (i == playerY && j == playerX) ch = PLAYER;
+
+            int wantedColor = COL_DEFAULT;
+
+            switch (ch) {
+                case BORDER:
+                    wantedColor = COL_BORDER;
+                    break;
+                case PLATFORM:
+                    wantedColor = COL_PLATFORM;
+                    break;
+                case PLAYER:
+                    wantedColor = COL_PLAYER;
+                    break;
+                case BASIC_WALKER:
+                case JUMPER:
+                case FLIER:
+                case CRAWLER:
+                    wantedColor = COL_ENEMY;
+                    break;
+                case BOSS:
+                    wantedColor = COL_BOSS;
+                    break;
+                case '/':
+                case '\\':
+                case '-':
+                case '|':
+                    wantedColor = COL_ATTACK;
+                    break;
+                default:
+                    wantedColor = COL_DEFAULT;
+                    break;
+            }
+
+            if (wantedColor != currentColor) {
+                currentColor = wantedColor;
+                SetConsoleTextAttribute(hConsole, currentColor);
+            }
+
+            cout << ch;
+        }
+
+        if (currentColor != COL_DEFAULT) {
+            currentColor = COL_DEFAULT;
+            SetConsoleTextAttribute(hConsole, currentColor);
+        }
+        cout << endl;
+    }
+
+    SetConsoleTextAttribute(hConsole, COL_DEFAULT);
 }
 
 void hideCursor() {
@@ -74,17 +199,37 @@ int randInt(int a, int b) {
     return a + rand() % (b - a + 1);
 }
 
-void generatePlatforms() {
-    for (int i = 0; i < 3; i++) {
-        int randX = randInt(1, WIDTH - 2);
-        int randY = randInt(1, HEIGHT - 2);
-        int length = randInt(1, WIDTH - 3);
-        
-        int j = 0;
-        while (j < length && gameMatrix[randY][j + randX] != BORDER && gameMatrix[randY][j + randX] != PLATFORM) {
-            gameMatrix[randY][j + randX] = PLATFORM;
-            j++;
-        }
+void generatePlatform(int posX, int posY, int length) {
+    if (posY < 1 || posY > HEIGHT - 2) return;
+
+    for (int i = 0; i < length; i++) {
+        int px = posX + i;
+        if (px < 1 || px > WIDTH - 2) break;
+
+        if (gameMatrix[posY][px] == EMPTY)
+            gameMatrix[posY][px] = PLATFORM;
+    }
+}
+
+void generatePlatforms(int platformsCount) {
+    generatePlatform(playerX - 2, playerY + 1, 5);
+
+    int x = randInt(8, 16);
+    int y = playerY + 1;
+
+    for (int i = 1; i < platformsCount; i++) {
+        int length = randInt(6, 14);
+        generatePlatform(x, y, length);
+
+        int dx = randInt(8, 16);
+        int dy = randInt(-2, 2) * JUMP_STRENGTH;
+
+        y += dy;
+        if (y < 2) y = 2;
+        if (y > HEIGHT - 3) y = HEIGHT - 3;
+
+        x += dx;
+        if (x > WIDTH - 20) break;
     }
 }
 
@@ -109,6 +254,90 @@ void jump() {
     jumpsLeft--;
 }
 
+void attack(Direction dir) {
+    const char* attackAnimation = attackAnimations[dir];
+
+    int attackCellX[ATTACK_CELLS], attackCellY[ATTACK_CELLS];
+
+    if (dir == Up) {
+        attackCellX[0] = playerX - 1;
+        attackCellX[1] = playerX;
+        attackCellX[2] = playerX + 1;
+
+        attackCellY[0] = playerY - 1;
+        attackCellY[1] = playerY - 1;
+        attackCellY[2] = playerY - 1;
+    }
+    else if (dir == Left) {
+        attackCellX[0] = playerX - 1;
+        attackCellX[1] = playerX - 1;
+        attackCellX[2] = playerX - 1;
+
+        attackCellY[0] = playerY - 1;
+        attackCellY[1] = playerY;
+        attackCellY[2] = playerY + 1;
+    }
+    else if (dir == Down) {
+        attackCellX[0] = playerX - 1;
+        attackCellX[1] = playerX;
+        attackCellX[2] = playerX + 1;
+
+        attackCellY[0] = playerY + 1;
+        attackCellY[1] = playerY + 1;
+        attackCellY[2] = playerY + 1;
+    }
+    else {
+        attackCellX[0] = playerX + 1;
+        attackCellX[1] = playerX + 1;
+        attackCellX[2] = playerX + 1;
+
+        attackCellY[0] = playerY - 1;
+        attackCellY[1] = playerY;
+        attackCellY[2] = playerY + 1;
+    }
+
+    for (int i = 0; i < enemiesCount; i++) {
+        if (!enemies[i].alive) continue;
+
+        for (int j = 0; j < ATTACK_CELLS; j++) {
+            if (enemies[i].x == attackCellX[j] &&
+                enemies[i].y == attackCellY[j]) {
+                enemies[i].alive = false;
+            }
+        }
+    }
+
+    for (int i = 0; i < ATTACK_CELLS; i++) {
+        int currentX = attackCellX[i];
+        int currentY = attackCellY[i];
+
+        if (currentX < 1 || currentX > WIDTH - 2 || currentY < 1 || currentY > HEIGHT - 2) {
+            oldCellSymbol[i] = 0;
+            continue;
+        }
+
+        if (gameMatrix[currentY][currentX] == BORDER || gameMatrix[currentY][currentX] == PLATFORM) {
+            oldCellSymbol[i] = 0;
+            continue;
+        }
+
+        oldCellSymbol[i] = gameMatrix[currentY][currentX];
+        gameMatrix[currentY][currentX] = attackAnimation[i];
+    }
+
+    render();
+    Sleep(70);
+
+    for (int i = 0; i < ATTACK_CELLS; i++) {
+        if (oldCellSymbol[i] == 0) continue;
+
+        int currentX = attackCellX[i];
+        int currentY = attackCellY[i];
+
+        gameMatrix[currentY][currentX] = oldCellSymbol[i];
+    }
+}
+
 void handleInput() {
     if (_kbhit() == true) {
         switch (_getch()) {
@@ -124,36 +353,23 @@ void handleInput() {
             case 'w':
                 jump();
                 break;
+            case 'I':
+            case 'i':
+                attack(Up);
+                break;
+            case 'J':
+            case 'j':
+                attack(Left);
+                break;
+            case 'K':
+            case 'k':
+                attack(Down);
+                break;
+            case 'L':
+            case 'l':
+                attack(Right);
+                break;
         }
-    }
-}
-
-void render() {
-    moveCursor(0, 0);
-
-    cout << "HP: ";
-    
-    for (int i = 1; i <= INITIAL_HITPOINTS; i++) {
-        if (i <= hitpoints)
-            cout << '0';
-        else
-            cout << 'o';
-
-        if (i < INITIAL_HITPOINTS)
-            cout << '-';
-    }
-
-    cout << '\t'
-         << "- (a / d move, w jump, double jump, i / j / k / l attack)"
-         << endl;
-
-    for (int i = 0; i < HEIGHT; i++) {
-        for (int j = 0; j < WIDTH; j++) {
-            cout << (!(i == playerY && j == playerX)
-                ? gameMatrix[i][j]
-                : PLAYER);
-        }
-        cout << endl;
     }
 }
 
@@ -181,38 +397,6 @@ void gravityCheck() {
     if (!onGround) velY += GRAVITY;
 }
 
-int main()
-{
-    srand((unsigned)time(nullptr));
-
-    hideCursor();
-
-    initializeGameMatrix(WIDTH, HEIGHT);
-    generatePlatforms();
-
-    while (true) {
-        handleInput();
-        gravityCheck();
-
-        startWave(1);
-
-        render();
-
-        Sleep(40);
-    }
-}
-
-struct Enemy {
-    int x, y;
-    char type;
-    int hp;
-    bool alive;
-};
-
-Enemy* enemies = nullptr;
-
-int enemiesCount = 0;
-
 char randEnemyType() {
     int randEnemyCode = randInt(1, 4);
 
@@ -228,6 +412,9 @@ char randEnemyType() {
 void startWave(int wave) {
     delete[] enemies;
 
+    int platformsCount = randInt(PLATFORMS_MIN, PLATFORMS_MAX);
+    generatePlatforms(platformsCount);
+
     enemiesCount += randInt(2, 4);
     enemies = new Enemy[enemiesCount];
 
@@ -236,5 +423,34 @@ void startWave(int wave) {
         enemies[i].y = randInt(1, HEIGHT - 3);
         enemies[i].type = randEnemyType();
         enemies[i].alive = true;
+    }
+}
+
+bool waveHasEnded() {
+    for (int i = 0; i < enemiesCount; i++) {
+        if (enemies[i].alive)
+            return false;
+    }
+
+    return true;
+}
+
+int main()
+{
+    srand((unsigned)time(nullptr));
+
+    hideCursor();
+
+    initializeGameMatrix(WIDTH, HEIGHT);
+
+    while (true) {
+        handleInput();
+        gravityCheck();
+
+        if (waveHasEnded())
+            startWave(++currentWave);
+
+        render();
+        Sleep(40);
     }
 }
