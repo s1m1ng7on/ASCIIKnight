@@ -7,7 +7,7 @@
 *
 * Simeon Gunev
 * 0MI0600562
-* GCC
+* VC
 *
 * ASCII Knight is a console-based game project developed as part of the Introduction to Programming (UP Practicum) course.
 *
