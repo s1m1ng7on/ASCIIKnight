@@ -1,15 +1,15 @@
 ﻿/**
 *
-* Solution to course project # <variant number>
+* Solution to course project #10
 * Introduction to programming course
 * Faculty of Mathematics and Informatics of Sofia University
 * Winter semester 2025/2026
 *
-* @author <your name>
-* @idnumber <your faculty number>
-* @compiler <GCC or VC>
+* Simeon Gunev
+* 0MI0600562
+* GCC
 *
-* Console ASCII game - Knight waves
+* ASCII Knight is a console-based game project developed as part of the Introduction to Programming (UP Practicum) course.
 *
 */
 
