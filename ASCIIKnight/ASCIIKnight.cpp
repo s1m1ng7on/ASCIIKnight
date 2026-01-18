@@ -10,6 +10,7 @@ struct Enemy {
     int x, y;
     char type;
     int hp;
+    int attackCooldown;
     bool alive;
 };
 
@@ -38,6 +39,7 @@ const char EMPTY = ' ',
 const int JUMP_STRENGTH = 2;
 const int GRAVITY = 1;
 const int ATTACK_CELLS = 3;
+const int ENEMY_ATTACK_COOLDOWN = 20;
 
 const int PLATFORMS_MIN = 3, PLATFORMS_MAX = 8;
 
@@ -74,6 +76,24 @@ char** gameMatrix = nullptr;
 
 HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
 
+void moveCursor(int x, int y) {
+    COORD c;
+    c.X = (SHORT)x;
+    c.Y = (SHORT)y;
+    SetConsoleCursorPosition(hConsole, c);
+}
+
+void hideCursor() {
+    CONSOLE_CURSOR_INFO info;
+    GetConsoleCursorInfo(hConsole, &info);
+    info.bVisible = FALSE;
+    SetConsoleCursorInfo(hConsole, &info);
+}
+
+int randInt(int a, int b) {
+    return a + rand() % (b - a + 1);
+}
+
 void initializeGameMatrix(int width, int height) {
     gameMatrix = new char* [height];
     for (int i = 0; i < height; i++) {
@@ -93,13 +113,6 @@ void initializeGameMatrix(int width, int height) {
             gameMatrix[i][j] = EMPTY;
         }
     }
-}
-
-void moveCursor(int x, int y) {
-    COORD c;
-    c.X = (SHORT)x;
-    c.Y = (SHORT)y;
-    SetConsoleCursorPosition(hConsole, c);
 }
 
 void render() {
@@ -186,17 +199,6 @@ void render() {
     }
 
     SetConsoleTextAttribute(hConsole, COL_DEFAULT);
-}
-
-void hideCursor() {
-    CONSOLE_CURSOR_INFO info;
-    GetConsoleCursorInfo(hConsole, &info);
-    info.bVisible = FALSE;
-    SetConsoleCursorInfo(hConsole, &info);
-}
-
-int randInt(int a, int b) {
-    return a + rand() % (b - a + 1);
 }
 
 void generatePlatform(int posX, int posY, int length) {
@@ -422,6 +424,7 @@ void startWave(int wave) {
         enemies[i].x = randInt(1, WIDTH - 2);
         enemies[i].y = randInt(1, HEIGHT - 3);
         enemies[i].type = randEnemyType();
+        enemies[i].attackCooldown = ENEMY_ATTACK_COOLDOWN;
         enemies[i].alive = true;
     }
 }
@@ -435,6 +438,100 @@ bool waveHasEnded() {
     return true;
 }
 
+void handleBasicWalker(Enemy& basicWalker) {
+    int directionX = (playerX < basicWalker.x) ? -1 : 1;
+
+    if (!isBlocked(basicWalker.x + directionX, basicWalker.y))
+        basicWalker.x += directionX;
+}
+
+void handleJumper(Enemy& jumper) {
+    int directionX = (playerX < jumper.x) ? -1 : 1;
+
+    if (!isBlocked(jumper.x + directionX, jumper.y))
+        jumper.x += directionX;
+
+    if (abs(playerX - jumper.x) <= 2 && !isBlocked(jumper.x, jumper.y - 1))
+        jumper.y -= 1;
+}
+
+
+void handleFlier(Enemy& flier) {
+    if (playerX < flier.x) flier.x--;
+    if (playerX > flier.x) flier.x++;
+
+    if (playerY < flier.y) flier.y--;
+    if (playerY > flier.y) flier.y++;
+}
+
+void handleCrawler(Enemy& crawler) {
+    static int direction = 1;
+
+    if (isBlocked(crawler.x + direction, crawler.y))
+        direction = -direction;
+
+    if (!isBlocked(crawler.x + direction, crawler.y))
+        crawler.x += direction;
+}
+
+void handleEnemies() {
+    for (int i = 0; i < enemiesCount; i++) {
+        if (!enemies[i].alive)
+            continue;
+
+        if (enemies[i].attackCooldown > 0)
+            enemies[i].attackCooldown--;
+
+        switch (enemies[i].type) {
+            case BASIC_WALKER:
+                handleBasicWalker(enemies[i]);
+                break;
+            case JUMPER:
+                handleJumper(enemies[i]);
+                break;
+            case FLIER:
+                handleFlier(enemies[i]);
+                break;
+            case CRAWLER:
+                handleCrawler(enemies[i]);
+                break;
+        }
+
+        if (enemies[i].attackCooldown > 0) 
+
+        if (enemies[i].x == playerX && enemies[i].y == playerY) {
+            hitpoints--;
+            enemies[i].attackCooldown = ENEMY_ATTACK_COOLDOWN;
+        }
+    }
+}
+
+bool gameHasEnded() {
+    if (hitpoints <= 0) {
+        moveCursor(0, 0);
+        render();
+
+        SetConsoleTextAttribute(hConsole, 12);
+        cout << "GAME OVER\n";
+        SetConsoleTextAttribute(hConsole, COL_DEFAULT);
+
+        return true;
+    }
+
+    if (currentWave >= WAVES_NUMBER && waveHasEnded()) {
+        moveCursor(0, 0);
+        render();
+
+        SetConsoleTextAttribute(hConsole, 10);
+        cout << "YOU WIN\n";
+        SetConsoleTextAttribute(hConsole, COL_DEFAULT);
+
+        return true;
+    }
+
+    return false;
+}
+
 int main()
 {
     srand((unsigned)time(nullptr));
@@ -446,11 +543,19 @@ int main()
     while (true) {
         handleInput();
         gravityCheck();
+        handleEnemies();
 
         if (waveHasEnded())
             startWave(++currentWave);
 
+        if (gameHasEnded())
+            break;
+
         render();
         Sleep(40);
     }
+
+    cout << "Press any key to exit...";
+
+    _getch();
 }
