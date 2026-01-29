@@ -812,10 +812,8 @@ void handleBasicWalker(Enemy& e) {
 }
 
 void handleJumper(Enemy& e) {
-	int aggressionRange = 10;
 	bool onGround = isBlocked(e.x, e.y + 1);
-
-	int dx = (abs(playerX - e.x) < aggressionRange) ? ((playerX < e.x) ? -1 : 1) : e.dir;
+	int dx = (playerX < e.x) ? -1 : 1;
 
 	if (e.timer % 15 == 0 && !isBlocked(e.x + dx, e.y)) {
 		e.x += dx;
@@ -827,8 +825,6 @@ void handleJumper(Enemy& e) {
 			if (!isBlocked(e.x, e.y - 1)) e.y -= 1;
 			if (!isBlocked(e.x, e.y - 1)) e.y -= 1;
 		}
-
-		if (isBlocked(e.x + e.dir, e.y)) e.dir *= -1;
 	}
 
 	e.timer++;
