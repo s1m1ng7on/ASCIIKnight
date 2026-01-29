@@ -160,13 +160,7 @@ void initializeGameMatrix(int width, int height) {
 	for (int i = 1; i < height - 1; i++) {
 		gameMatrix[i][0] = BORDER;
 		gameMatrix[i][width - 1] = BORDER;
-
-		for (int j = 1; j < width - 1; j++) {
-			gameMatrix[i][j] = EMPTY;
-		}
 	}
-
-	clearEnemyMap();
 }
 
 void resetArenaInsideToEmpty() {
@@ -178,12 +172,15 @@ void resetArenaInsideToEmpty() {
 }
 
 bool isBlocked(int x, int y) {
-	if (gameMatrix[y][x] == BORDER) {
+	if (gameMatrix[y][x] == BORDER)
 		return true;
-	}
-	if (gameMatrix[y][x] == PLATFORM) {
+
+	if (gameMatrix[y][x] == PLATFORM)
 		return true;
-	}
+
+	if (enemyMap[y][x] != 0)
+		return true;
+
 	return false;
 }
 
@@ -420,24 +417,12 @@ void gravityCheckPlayer() {
 	}
 
 	int steps = abs(velY);
-
-	int dir = 1;
-	if (velY < 0) {
-		dir = -1;
-	}
+	int dir = (velY < 0) ? -1 : 1;
 
 	for (int i = 0; i < steps; i++) {
 		int newY = playerY + dir;
 
-		if (newY < 1) {
-			velY = 0;
-			break;
-		}
-		if (newY > HEIGHT - 2) {
-			velY = 0;
-			break;
-		}
-		if (isBlocked(playerX, newY)) {
+		if (!isInsideArena(playerX, newY) || isBlocked(playerX, newY)) {
 			velY = 0;
 			break;
 		}
@@ -445,26 +430,13 @@ void gravityCheckPlayer() {
 		playerY = newY;
 	}
 
-	onGround = isBlocked(playerX, playerY + 1);
-	if (!onGround) {
-		velY = velY + GRAVITY;
+	if (!isBlocked(playerX, playerY + 1)) {
+		velY += GRAVITY;
 	}
 }
 
 bool playerHitsBossCell(Enemy& boss, int x, int y) {
-	if (x < boss.x) {
-		return false;
-	}
-	if (x > boss.x + 2) {
-		return false;
-	}
-	if (y < boss.y) {
-		return false;
-	}
-	if (y > boss.y + 2) {
-		return false;
-	}
-	return true;
+	return (x >= boss.x && x <= boss.x + 2 && y >= boss.y && y <= boss.y + 2);
 }
 
 void attack(Direction dir) {
@@ -659,25 +631,31 @@ char randEnemyTypeNonBoss() {
 	return BASIC_WALKER;
 }
 
-bool findSpawnCell(int& outX, int& outY) {
-	for (int t = 0; t < 200; t++) {
-		int x = randInt(2, WIDTH - 3);
+bool findSpawnCell(int& outX, int& outY, char type) {
+	for (int t = 0; t < 300; t++) {
+		int x = randInt(5, WIDTH - 6);
 		int y = randInt(2, HEIGHT - 4);
 
-		if (isBlocked(x, y)) {
-			continue;
-		}
-		if (x == playerX && y == playerY) {
+		if (type == FLIER || type == CRAWLER) {
+			if (gameMatrix[y][x] == EMPTY && (abs(x - playerX) > 10)) {
+				outX = x; outY = y;
+				return true;
+			}
 			continue;
 		}
 
-		outX = x;
-		outY = y;
-		return true;
+		if (gameMatrix[y][x] == EMPTY &&
+			(gameMatrix[y + 1][x] == PLATFORM || gameMatrix[y + 1][x] == BORDER)) {
+
+			if (abs(x - playerX) > 8) {
+				outX = x; outY = y;
+				return true;
+			}
+		}
 	}
 
-	outX = randInt(2, WIDTH - 3);
-	outY = randInt(2, HEIGHT - 4);
+	outX = (playerX < WIDTH / 2) ? WIDTH - 10 : 10;
+	outY = HEIGHT - 2;
 	return true;
 }
 
@@ -697,15 +675,8 @@ void spawnEnemiesForWave(int wave) {
 		enemies[0].dir = 0;
 		enemies[0].timer = 0;
 
-		enemies[0].x = WIDTH - 6;
-		enemies[0].y = 3;
-
-		if (enemies[0].x < 2) {
-			enemies[0].x = 2;
-		}
-		if (enemies[0].y < 2) {
-			enemies[0].y = 2;
-		}
+		enemies[0].x = WIDTH - 5;
+		enemies[0].y = 2;
 	}
 	else {
 		if (plannedEnemiesForNextWave == 0) {
@@ -734,7 +705,7 @@ void spawnEnemiesForWave(int wave) {
 
 			int sx = 0;
 			int sy = 0;
-			findSpawnCell(sx, sy);
+			findSpawnCell(sx, sy, enemies[i].type);
 
 			enemies[i].x = sx;
 			enemies[i].y = sy;
@@ -815,92 +786,82 @@ void applyEnemyGravity(Enemy& e) {
 }
 
 void handleBasicWalker(Enemy& e) {
-	int dx = 1;
+	int detectionRange = 15;
+	int dist = abs(playerX - e.x);
 
-	if (playerX < e.x) {
-		dx = -1;
+	if (dist < detectionRange) {
+		int dx = (playerX < e.x) ? -1 : 1;
+		if (!isBlocked(e.x + dx, e.y)) {
+			e.x += dx;
+		}
 	}
+	else {
+		if (e.timer % 20 == 0) {
+			if (randInt(0, 5) == 0) e.dir *= -1;
+		}
 
-	if (!isBlocked(e.x + dx, e.y)) {
-		e.x = e.x + dx;
+		if (!isBlocked(e.x + e.dir, e.y)) {
+			e.x += e.dir;
+		}
+		else {
+			e.dir *= -1;
+		}
 	}
-
+	e.timer++;
 	applyEnemyGravity(e);
 }
 
 void handleJumper(Enemy& e) {
-	int dx = 1;
-
-	if (playerX < e.x) {
-		dx = -1;
-	}
-
-	if (!isBlocked(e.x + dx, e.y)) {
-		e.x = e.x + dx;
-	}
-
+	int aggressionRange = 10;
 	bool onGround = isBlocked(e.x, e.y + 1);
 
-	if (onGround) {
-		if (abs(playerX - e.x) <= 3 && abs(playerY - e.y) <= 2) {
-			if (!isBlocked(e.x, e.y - 1)) {
-				e.y = e.y - 1;
-			}
-			if (!isBlocked(e.x, e.y - 1)) {
-				e.y = e.y - 1;
-			}
-		}
+	int dx = (abs(playerX - e.x) < aggressionRange) ? ((playerX < e.x) ? -1 : 1) : e.dir;
+
+	if (e.timer % 15 == 0 && !isBlocked(e.x + dx, e.y)) {
+		e.x += dx;
 	}
 
+	if (onGround) {
+		bool shouldJump = (abs(playerX - e.x) <= 4 && abs(playerY - e.y) <= 3) || isBlocked(e.x + dx, e.y);
+		if (shouldJump && randInt(0, 3) == 0) {
+			if (!isBlocked(e.x, e.y - 1)) e.y -= 1;
+			if (!isBlocked(e.x, e.y - 1)) e.y -= 1;
+		}
+
+		if (isBlocked(e.x + e.dir, e.y)) e.dir *= -1;
+	}
+
+	e.timer++;
 	applyEnemyGravity(e);
 }
 
 void handleFlier(Enemy& e) {
-	if (playerX < e.x) {
-		e.x = e.x - 1;
-	}
-	if (playerX > e.x) {
-		e.x = e.x + 1;
+	if (e.timer % 2 == 0) {
+		if (playerX < e.x && !isBlocked(e.x - 1, e.y)) e.x--;
+		else if (playerX > e.x && !isBlocked(e.x + 1, e.y)) e.x++;
 	}
 
-	e.timer = e.timer + 1;
-
-	if (e.timer >= 6) {
-		e.timer = 0;
-
-		if (!isBlocked(e.x, e.y + 1)) {
-			e.y = e.y + 1;
-		}
-		else {
-			if (!isBlocked(e.x, e.y - 1) && randInt(0, 2) == 0) {
-				e.y = e.y - 1;
-			}
-		}
+	int targetY = playerY - 2;
+	if (e.timer % 4 == 0) {
+		if (e.y < targetY && !isBlocked(e.x, e.y + 1)) e.y++;
+		else if (e.y > targetY && !isBlocked(e.x, e.y - 1)) e.y--;
 	}
 
-	if (e.x < 1) {
-		e.x = 1;
+	if (randInt(0, 10) == 0) {
+		int dy = (randInt(0, 1) == 0) ? 1 : -1;
+		if (!isBlocked(e.x, e.y + dy)) e.y += dy;
 	}
-	if (e.x > WIDTH - 2) {
-		e.x = WIDTH - 2;
-	}
-	if (e.y < 1) {
-		e.y = 1;
-	}
-	if (e.y > HEIGHT - 2) {
-		e.y = HEIGHT - 2;
-	}
+
+	e.timer++;
 }
 
 void handleCrawler(Enemy& e) {
-	if (e.dir == 0) {
-		e.dir = 1;
-	}
+	if (e.dir == 0) e.dir = 1;
 
 	int nx = e.x + e.dir;
 
 	if (isBlocked(nx, e.y)) {
-		if (!isBlocked(e.x, e.y - 1)) {
+		if (e.y > 1 && !isBlocked(e.x, e.y - 1)) {
 			e.y = e.y - 1;
 		}
 		else {
@@ -911,7 +872,14 @@ void handleCrawler(Enemy& e) {
 		e.x = nx;
 	}
 
-	applyEnemyGravity(e);
+	if (e.type != BOSS && !isBlocked(e.x, e.y + 1)) {
+		e.y = e.y + 1;
+	}
+
+	if (e.x < 1) e.x = 1;
+	if (e.x > WIDTH - 2) e.x = WIDTH - 2;
+	if (e.y < 1) e.y = 1;
+	if (e.y > HEIGHT - 2) e.y = HEIGHT - 2;
 }
 
 void bossAttackLine(Enemy& boss) {
@@ -947,17 +915,17 @@ void bossAttackLine(Enemy& boss) {
 		int x = cx + dx * i;
 		int y = cy + dy * i;
 
-		if (!isInsideArena(x, y)) {
+		if (!isInsideArena(x, y))
 			break;
-		}
 
-		if (gameMatrix[y][x] == BORDER) {
+		if (gameMatrix[y][x] == BORDER)
 			break;
-		}
 
-		if (gameMatrix[y][x] == PLATFORM) {
+		if (gameMatrix[y][x] == PLATFORM)
 			break;
-		}
+
+		if (enemyMap[y][x] != 0) 
+			break;
 
 		char sym = '|';
 		if (dx != 0) {
@@ -980,54 +948,24 @@ void bossAttackLine(Enemy& boss) {
 }
 
 void handleBoss(Enemy& boss) {
-	boss.timer = boss.timer + 1;
+	boss.timer++;
 
-	if (boss.timer % 3 == 0) {
-		int targetX = playerX - 1;
-		int targetY = playerY - 1;
+	int speed = (boss.hp < 3) ? 2 : 3;
+	if (boss.timer % speed == 0) {
+		if (playerX < boss.x + 1 && boss.x > 1) boss.x--;
+		else if (playerX > boss.x + 1 && boss.x < WIDTH - 4) boss.x++;
+	}
 
-		if (targetX < 1) {
-			targetX = 1;
-		}
-		if (targetX > WIDTH - 4) {
-			targetX = WIDTH - 4;
-		}
-		if (targetY < 1) {
-			targetY = 1;
-		}
-		if (targetY > HEIGHT - 4) {
-			targetY = HEIGHT - 4;
-		}
-
-		if (targetX < boss.x && boss.x > 1) {
-			boss.x = boss.x - 1;
-		}
-		if (targetX > boss.x && boss.x < WIDTH - 4) {
-			boss.x = boss.x + 1;
-		}
-		if (targetY < boss.y && boss.y > 1) {
-			boss.y = boss.y - 1;
-		}
-		if (targetY > boss.y && boss.y < HEIGHT - 4) {
-			boss.y = boss.y + 1;
-		}
+	if (boss.attackCooldown > 0) boss.attackCooldown--;
+	else {
+		boss.attackCooldown = (boss.hp < 3) ? 15 : 28;
+		bossAttackLine(boss);
 	}
 
 	applyEnemyGravity(boss);
 
-	if (boss.attackCooldown > 0) {
-		boss.attackCooldown = boss.attackCooldown - 1;
-	}
-
-	if (boss.attackCooldown <= 0) {
-		boss.attackCooldown = 28;
-		bossAttackLine(boss);
-	}
-
 	if (playerHitsBossCell(boss, playerX, playerY)) {
-		if (boss.timer % 8 == 0) {
-			hitpoints = hitpoints - 2;
-		}
+		if (boss.timer % 10 == 0) hitpoints -= (boss.hp < 3) ? 2 : 1;
 	}
 }
 
@@ -1065,6 +1003,27 @@ void handleEnemies() {
 			break;
 		}
 
+		for (int j = 0; j < enemiesCount; j++) {
+			if (i == j || !enemies[j].alive) continue;
+
+			if (enemy.x == enemies[j].x && enemy.y == enemies[j].y && enemy.type != BOSS && enemies[j].type != BOSS) {
+				int pushDir = (enemy.x < enemies[j].x) ? -1 : 1;
+
+				if (enemy.x == enemies[j].x) pushDir = (enemy.x > WIDTH / 2) ? -1 : 1;
+
+				if (!isBlocked(enemy.x + pushDir, enemy.y)) {
+					enemy.x += pushDir;
+				}
+
+				if (enemy.type == BASIC_WALKER || enemy.type == CRAWLER) {
+					enemy.dir = -enemy.dir;
+				}
+				if (enemies[j].type == BASIC_WALKER || enemies[j].type == CRAWLER) {
+					enemies[j].dir = -enemies[j].dir;
+				}
+			}
+		}
+
 		if (enemy.type != BOSS) {
 			if (enemy.x < 1) {
 				enemy.x = 1;
@@ -1081,13 +1040,18 @@ void handleEnemies() {
 		}
 
 		if (enemy.type != BOSS) {
-			if (enemy.attackCooldown > 0) {
-				enemy.attackCooldown = enemy.attackCooldown - 1;
-			}
+			if (enemy.attackCooldown > 0) enemy.attackCooldown--;
 
-			if (enemy.attackCooldown <= 0 && enemy.x == playerX && enemy.y == playerY) {
-				hitpoints = hitpoints - 1;
-				enemy.attackCooldown = ENEMY_ATTACK_COOLDOWN;
+			if (enemy.x == playerX && enemy.y == playerY) {
+				if (enemy.attackCooldown <= 0) {
+					hitpoints--;
+					enemy.attackCooldown = ENEMY_ATTACK_COOLDOWN;
+
+					if (playerX > enemy.x)
+						moveHorizontal(1);
+					else
+						moveHorizontal(-1);
+				}
 			}
 		}
 	}
@@ -1100,7 +1064,9 @@ bool gameHasEnded() {
 		return true;
 	}
 
-	if (currentWave == WAVES_NUMBER && allEnemiesDead()) {
+	if (currentWave == WAVES_NUMBER &&
+		enemiesSpawnedThisWave &&
+		allEnemiesDead()) {
 		return true;
 	}
 
